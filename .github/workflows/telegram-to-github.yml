@@ -1,49 +1,49 @@
-name: Upload Telegram File to GitHub
+name: Download from Telegram & Upload to Release
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # هر ۶ ساعت
-  workflow_dispatch:
+    - cron: '0 */6 * * *'  # هر 6 ساعت
+  workflow_dispatch:  # دستی اجرا کنید
+
+permissions:
+  contents: write
 
 jobs:
-  upload-telegram-file:
+  download-and-upload:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
-
+      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
+      
       - name: Install dependencies
         run: |
           pip install telethon requests
-
-      - name: Download latest file from Telegram
+      
+      - name: Download from Telegram
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python scripts/download_telegram.py
-
-      - name: Split file if needed
+      
+      - name: Split large files
         run: python scripts/split_and_upload.py
-
+      
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/create_release.py
-
+      
       - name: Cleanup files
         if: always()
         run: |
-          rm -rf telegram_files
-          rm -rf uploaded_files
-          echo "✅ فایل‌های موقتی حذف شدند"
-
+          rm -rf telegram_files uploaded_files
+          rm -f file_info.json release_files.json bot_session.session
+          echo "✅ تمیزی کامل شد"
