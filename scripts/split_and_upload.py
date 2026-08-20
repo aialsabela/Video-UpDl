@@ -1,69 +1,58 @@
 import os
-import shutil
-from pathlib import Path
 import json
 
-CHUNK_SIZE = 100 * 1024 * 1024  # ۱۰۰ مگابایت
-OUTPUT_DIR = 'uploaded_files'
+CHUNK_SIZE = 100 * 1024 * 1024  # 100 MB
 
-def split_file(filepath, chunk_size=CHUNK_SIZE):
-    """فایل بزرگ را به قسمت‌های کوچک تقسیم می‌کند"""
-    
-    filename = Path(filepath).name
+def split_file(filepath):
+    filename = os.path.basename(filepath)
     file_size = os.path.getsize(filepath)
     
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    print(f"📊 اندازه فایل: {file_size / 1024 / 1024:.2f} MB")
     
-    # اگر کوچک‌تر از ۱۰۰ مگ است، تقسیم نکن
-    if file_size <= chunk_size:
-        print(f"✅ {filename} کوچک‌تر از ۱۰۰ مگ است")
-        shutil.copy(filepath, f'{OUTPUT_DIR}/{filename}')
+    if file_size <= CHUNK_SIZE:
+        print("✅ فایل کوچک است، تقسیم نیازی نیست")
         return [filename]
     
-    print(f"📊 {filename} بزرگ است ({file_size / (1024**2):.2f} MB)")
-    print(f"🔪 در حال تقسیم به قسمت‌های ۱۰۰ مگابایتی...")
+    print(f"📂 تقسیم به قطعات {CHUNK_SIZE / 1024 / 1024:.0f} MB...")
     
+    os.makedirs('uploaded_files', exist_ok=True)
     parts = []
+    
     with open(filepath, 'rb') as f:
         part_num = 1
         while True:
-            chunk = f.read(chunk_size)
+            chunk = f.read(CHUNK_SIZE)
             if not chunk:
                 break
             
-            part_filename = f'{filename}.part{part_num}'
-            part_filepath = f'{OUTPUT_DIR}/{part_filename}'
+            part_filename = f"{filename}.part{part_num}"
+            part_path = f"uploaded_files/{part_filename}"
             
-            with open(part_filepath, 'wb') as part_file:
+            with open(part_path, 'wb') as part_file:
                 part_file.write(chunk)
             
-            part_size = len(chunk) / (1024**2)
-            print(f"  ✓ قسمت {part_num}: {part_size:.2f} MB")
             parts.append(part_filename)
+            print(f"  ✅ {part_filename}")
             part_num += 1
     
+    print(f"✅ تقسیم کامل: {len(parts)} قطعه")
     return parts
 
-def process_files():
-    """تمام فایل‌های دانلود شده را پردازش می‌کند"""
-    
-    if not os.path.exists('telegram_files'):
-        print("❌ پوشه telegram_files پیدا نشد")
-        return []
-    
-    all_parts = []
-    for filename in os.listdir('telegram_files'):
-        filepath = f'telegram_files/{filename}'
-        if os.path.isfile(filepath):
-            parts = split_file(filepath)
-            all_parts.extend(parts)
-    
-    # ذخیره لیست فایل‌ها برای Release
-    with open('release_files.json', 'w') as f:
-        json.dump({'files': all_parts}, f)
-    
-    print("✅ پردازش تمام شد")
-    return all_parts
-
 if __name__ == '__main__':
-    process_files()
+    with open('file_info.json', 'r') as f:
+        metadata = json.load(f)
+    
+    filepath = f"telegram_files/{metadata['filename']}"
+    parts = split_file(filepath)
+    
+    release_data = {
+        'original_filename': metadata['filename'],
+        'original_size': metadata['size'],
+        'parts': parts,
+        'part_count': len(parts)
+    }
+    
+    with open('release_files.json', 'w') as f:
+        json.dump(release_data, f, indent=2)
+    
+    print(f"📋 لیست قطعات ذخیره شد")
