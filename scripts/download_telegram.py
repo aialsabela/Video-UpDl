@@ -31,7 +31,16 @@ async def main():
     
     async for message in client.iter_messages(CHANNEL_ID, limit=100):
         if message.document:
-            filename = message.document.filename or f"file_{message.id}"
+            # ✅ درست: از message.media.document.attributes استفاده
+            filename = None
+            for attr in message.document.attributes:
+                if hasattr(attr, 'file_name'):
+                    filename = attr.file_name
+                    break
+            
+            if not filename:
+                filename = f"file_{message.id}.bin"
+            
             filepath = f"telegram_files/{filename}"
             
             print(f"⬇️  درحال دانلود: {filename}")
