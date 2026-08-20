@@ -1,0 +1,49 @@
+name: Upload Telegram File to GitHub
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # هر ۶ ساعت
+  workflow_dispatch:
+
+jobs:
+  upload-telegram-file:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install telethon requests
+
+      - name: Download latest file from Telegram
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python scripts/download_telegram.py
+
+      - name: Split file if needed
+        run: python scripts/split_and_upload.py
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/create_release.py
+
+      - name: Cleanup files
+        if: always()
+        run: |
+          rm -rf telegram_files
+          rm -rf uploaded_files
+          echo "✅ فایل‌های موقتی حذف شدند"
+
