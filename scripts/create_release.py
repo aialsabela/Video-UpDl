@@ -4,37 +4,28 @@ import subprocess
 from datetime import datetime
 
 def create_release():
+    if not os.path.exists('release_files.json'):
+        print("❌ release_files.json پیدا نشد")
+        return
+    
     with open('release_files.json', 'r') as f:
-        release_data = json.load(f)
+        data = json.load(f)
     
-    # تگ با تاریخ
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    tag_name = f"release-{timestamp}"
+    files = data['parts']
+    tag = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     
-    print(f"📦 ایجاد Release: {tag_name}")
+    print(f"📤 درحال آپلود Release: {tag}")
     
-    # دستورات آپلود
-    upload_files = []
-    for part in release_data['parts']:
-        upload_files.append(f"uploaded_files/{part}")
+    # gh release create
+    file_args = ' '.join([f"uploaded_files/{f}" for f in files])
+    cmd = f"gh release create {tag} {file_args} --generate-notes"
     
-    # ایجاد Release
-    cmd = ['gh', 'release', 'create', tag_name]
-    cmd.extend(upload_files)
-    cmd.extend(['--title', f"Telegram Files - {timestamp}"])
-    cmd.extend(['--notes', f"Original: {release_data['original_filename']}\nSize: {release_data['original_size'] / 1024 / 1024:.2f} MB\nParts: {release_data['part_count']}"])
+    result = os.system(cmd)
     
-    print(f"▶️  دستور: {' '.join(cmd)}")
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print(f"✅ Release ایجاد شد")
-        print(result.stdout)
+    if result == 0:
+        print(f"✅ Release {tag} آپلود شد!")
     else:
-        print(f"❌ خطا:")
-        print(result.stderr)
-        raise Exception("Release creation failed")
+        print(f"❌ خطا در آپلود")
+        exit(1)
 
-if __name__ == '__main__':
-    create_release()
+create_release()
