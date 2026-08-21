@@ -22,11 +22,15 @@ async def main():
             print("❌ متغیرهای محیطی ناقص هستند!")
             exit(1)
         
-        # Setup directories
+        # Setup directories - مطمئن شو که دایرکتوری‌ها ایجاد می‌شوند
         session_dir = Path('sessions')
         files_dir = Path('telegram_files')
-        session_dir.mkdir(exist_ok=True)
-        files_dir.mkdir(exist_ok=True)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        files_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"📂 Working directory: {Path.cwd()}")
+        print(f"📂 Session dir: {session_dir.absolute()}")
+        print(f"📂 Files dir: {files_dir.absolute()}")
         
         # Decode and save session
         try:
@@ -34,7 +38,7 @@ async def main():
             session_file = session_dir / 'telegram_session.session'
             with open(session_file, 'wb') as f:
                 f.write(session_bytes)
-            print(f"✅ Session ذخیره شد")
+            print(f"✅ Session ذخیره شد: {session_file.absolute()}")
         except Exception as e:
             print(f"❌ خطا در decode کردن session: {e}")
             exit(1)
@@ -112,25 +116,42 @@ async def main():
         
         if filepath.exists():
             print(f"⏭️  فایل قبلاً دانلود شده است")
+            print(f"   مسیر: {filepath.absolute()}")
         else:
             print(f"⬇️  درحال دانلود...")
             await client.download_media(last_file['message'], str(filepath))
             print(f"✅ دانلود کامل شد")
+            print(f"   مسیر: {filepath.absolute()}")
+        
+        # بررسی اینکه فایل واقعاً وجود دارد
+        if not filepath.exists():
+            print(f"❌ خطا: فایل بعد از دانلود پیدا نشد!")
+            await client.disconnect()
+            exit(1)
+        
+        actual_size = filepath.stat().st_size
+        print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
         
         # ذخیره اطلاعات
         file_info = {
             'filename': filename,
-            'size': file_size,
+            'size': actual_size,
             'message_id': last_file['message_id'],
-            'download_path': str(filepath)
+            'download_path': str(filepath.absolute())
         }
         
         info_file = files_dir / 'file_info.json'
         with open(info_file, 'w', encoding='utf-8') as f:
             json.dump(file_info, f, ensure_ascii=False, indent=2)
         
-        print(f"\n✅ اطلاعات ذخیره شد: file_info.json")
-        print(f"📂 مسیر فایل: {filepath}")
+        print(f"\n✅ اطلاعات ذخیره شد")
+        print(f"   فایل: {info_file.absolute()}")
+        
+        # ذخیره file_info.json در root هم برای سازگاری
+        root_info_file = Path('file_info.json')
+        with open(root_info_file, 'w', encoding='utf-8') as f:
+            json.dump(file_info, f, ensure_ascii=False, indent=2)
+        print(f"   فایل (root): {root_info_file.absolute()}")
         
         await client.disconnect()
         print("✅ اتصال قطع شد")
