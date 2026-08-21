@@ -62,4 +62,4 @@ jobs:
         with:
           tag_name: file-${{ github.run_id }}
           name: "فایل دانلودشده - ${{ github.run_id }}"
-          files: ${{ steps.dl.outputs.file_path }}
+          files: downloads/*
