@@ -95,8 +95,18 @@ async def download_parallel(client, document, dest_path, progress_cb=None):
     with open(dest_path, "wb") as f:
         f.truncate(total_size)
 
-    async def worker(worker_id):
+    same_dc = dc_id == client.session.dc_id
+
+    async def get_sender():
+        if same_dc:
+            # نمی‌شه برای همون DC ای که کلاینت اصلی الان بهش وصله، یه اتصال
+            # export جدا باز کرد؛ در این حالت از همون کانکشن اصلی استفاده می‌کنیم.
+            return client._sender, False
         sender = await client._borrow_exported_sender(dc_id)
+        return sender, True
+
+    async def worker(worker_id):
+        sender, exported = await get_sender()
         try:
             part = worker_id
             with open(dest_path, "r+b") as f:
@@ -120,7 +130,8 @@ async def download_parallel(client, document, dest_path, progress_cb=None):
 
                     part += PARALLEL_CONNECTIONS
         finally:
-            await client._return_exported_sender(sender)
+            if exported:
+                await client._return_exported_sender(sender)
 
     await asyncio.gather(*(worker(i) for i in range(PARALLEL_CONNECTIONS)))
 
