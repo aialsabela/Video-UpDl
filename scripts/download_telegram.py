@@ -34,7 +34,7 @@ async def main():
             session_file = session_dir / 'telegram_session.session'
             with open(session_file, 'wb') as f:
                 f.write(session_bytes)
-            print(f"✅ Session ذخیره شد: {session_file}")
+            print(f"✅ Session ذخیره شد")
         except Exception as e:
             print(f"❌ خطا در decode کردن session: {e}")
             exit(1)
@@ -60,23 +60,17 @@ async def main():
         
         print("✅ تایید هویت انجام شد")
         
-        # Downloaded files tracker
-        downloaded_files = []
-        message_count = 0
-        skip_count = 0
+        # یافتن آخرین فایل
+        print(f"⏳ درحال جستجوی آخرین فایل در چنل {CHANNEL_ID}...")
         
-        # Get files from channel
-        print(f"⏳ درحال بررسی چنل {CHANNEL_ID}...")
+        last_file = None
+        message_count = 0
         
         async for message in client.iter_messages(CHANNEL_ID, limit=None):
             message_count += 1
             
-            # نمایش پیشرفت هر 10 پیام
-            if message_count % 10 == 0:
-                print(f"   📊 {message_count} پیام بررسی شد...")
-            
             if message.document:
-                # Extract filename safely
+                # Extract filename
                 filename = None
                 
                 if hasattr(message.document, 'attributes') and message.document.attributes:
@@ -90,61 +84,56 @@ async def main():
                 
                 # Sanitize filename
                 filename = "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_', '-'))
-                filepath = files_dir / filename
                 
-                # Skip if already downloaded
-                if filepath.exists():
-                    print(f"⏭️  موجود است: {filename}")
-                    skip_count += 1
-                    continue
+                last_file = {
+                    'message': message,
+                    'filename': filename,
+                    'size': message.document.size,
+                    'message_id': message.id
+                }
                 
-                try:
-                    print(f"⬇️  درحال دانلود: {filename}")
-                    await client.download_media(message, str(filepath))
-                    
-                    # Get file size
-                    file_size = filepath.stat().st_size
-                    
-                    # Store metadata
-                    file_info = {
-                        'filename': filename,
-                        'size': file_size,
-                        'message_id': message.id
-                    }
-                    
-                    downloaded_files.append(file_info)
-                    
-                    # Save individual file info
-                    info_file = files_dir / f"{filename}.json"
-                    with open(info_file, 'w', encoding='utf-8') as f:
-                        json.dump(file_info, f, ensure_ascii=False, indent=2)
-                    
-                    print(f"✅ دانلود کامل: {filename} ({file_size / (1024*1024):.2f} MB)")
-                    
-                except Exception as e:
-                    print(f"❌ خطا در دانلود {filename}: {e}")
-                    continue
+                # خروج از حلقه (آخرین فایل پیدا شد)
+                break
         
-        # Save all downloaded files info
-        if downloaded_files:
-            summary_file = files_dir / 'downloaded_files.json'
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'total_messages_checked': message_count,
-                    'total_files_downloaded': len(downloaded_files),
-                    'skipped_files': skip_count,
-                    'files': downloaded_files
-                }, f, ensure_ascii=False, indent=2)
-            
-            print(f"\n📊 خلاصه:")
-            print(f"   کل پیام‌ها: {message_count}")
-            print(f"   فایل‌های دانلود‌شده: {len(downloaded_files)}")
-            print(f"   فایل‌های پرتاب‌شده: {skip_count}")
+        if not last_file:
+            print(f"❌ فایلی در چنل پیدا نشد! (بررسی شد: {message_count} پیام)")
+            await client.disconnect()
+            exit(1)
+        
+        # دانلود آخرین فایل
+        filename = last_file['filename']
+        filepath = files_dir / filename
+        file_size = last_file['size']
+        
+        print(f"\n📄 آخرین فایل:")
+        print(f"   نام: {filename}")
+        print(f"   اندازه: {file_size / (1024*1024):.2f} MB")
+        print(f"   پیام ID: {last_file['message_id']}")
+        
+        if filepath.exists():
+            print(f"⏭️  فایل قبلاً دانلود شده است")
         else:
-            print("⚠️  فایل دانلود‌شده‌ای یافت نشد!")
+            print(f"⬇️  درحال دانلود...")
+            await client.download_media(last_file['message'], str(filepath))
+            print(f"✅ دانلود کامل شد")
+        
+        # ذخیره اطلاعات
+        file_info = {
+            'filename': filename,
+            'size': file_size,
+            'message_id': last_file['message_id'],
+            'download_path': str(filepath)
+        }
+        
+        info_file = files_dir / 'file_info.json'
+        with open(info_file, 'w', encoding='utf-8') as f:
+            json.dump(file_info, f, ensure_ascii=False, indent=2)
+        
+        print(f"\n✅ اطلاعات ذخیره شد: file_info.json")
+        print(f"📂 مسیر فایل: {filepath}")
         
         await client.disconnect()
-        print("✅ قطع شد")
+        print("✅ اتصال قطع شد")
         
     except asyncio.TimeoutError:
         print("❌ Timeout: اتصال تلگرام قطع شد")
