@@ -1,7 +1,6 @@
 import os
 import json
 from pathlib import Path
-import subprocess
 
 CHUNK_SIZE = 100 * 1024 * 1024  # 100 MB
 
@@ -13,17 +12,21 @@ def split_file():
         print("❌ دایرکتوری telegram_files پیدا نشد")
         return
     
-    # یافتن فایل‌های دانلود‌شده
-    info_file = files_dir / 'downloaded_files.json'
+    # یافتن file_info.json
+    info_file = files_dir / 'file_info.json'
     if not info_file.exists():
-        print("❌ downloaded_files.json پیدا نشد")
+        print("❌ file_info.json پیدا نشد")
         return
     
     with open(info_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+        file_info = json.load(f)
     
-    if not data.get('files'):
-        print("❌ فایلی برای تقسیم پیدا نشد")
+    filename = file_info['filename']
+    file_size = file_info['size']
+    filepath = files_dir / filename
+    
+    if not filepath.exists():
+        print(f"❌ فایل پیدا نشد: {filepath}")
         return
     
     uploaded_dir = Path('uploaded_files')
@@ -31,65 +34,56 @@ def split_file():
     
     parts_info = []
     
-    # پردازش تمام فایل‌ها
-    for file_info in data['files']:
-        filename = file_info['filename']
-        filepath = files_dir / filename
-        file_size = file_info['size']
-        
-        if not filepath.exists():
-            print(f"⚠️  پرتاب شد: {filename} (موجود نیست)")
-            continue
-        
-        if file_size > CHUNK_SIZE:
-            print(f"📦 فایل بزرگ: {filename} ({file_size / (1024**2):.2f} MB)")
-            print(f"✂️  درحال تقسیم...")
-            
-            parts = []
-            with open(filepath, 'rb') as f:
-                part_num = 1
-                while True:
-                    chunk = f.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    
-                    part_name = f"{filename}.part{part_num:03d}"
-                    part_path = uploaded_dir / part_name
-                    
-                    with open(part_path, 'wb') as pf:
-                        pf.write(chunk)
-                    
-                    parts.append(part_name)
-                    print(f"✅ {part_name} ({len(chunk) / (1024**2):.2f} MB)")
-                    part_num += 1
-            
-            parts_info.extend(parts)
-            print(f"✅ {len(parts)} قسمت ایجاد شد برای {filename}\n")
-        else:
-            print(f"📄 فایل کوچک: {filename} ({file_size / (1024**2):.2f} MB)")
-            new_path = uploaded_dir / filename
-            
-            if new_path.exists():
-                print(f"   ⏭️  موجود است، پرتاب شد")
-                continue
-            
-            os.rename(filepath, new_path)
-            parts_info.append(filename)
-            print(f"✅ کپی شد\n")
+    print(f"📄 فایل: {filename}")
+    print(f"📊 اندازه: {file_size / (1024**2):.2f} MB")
     
-    # ذخیره خلاصه
-    if parts_info:
-        release_file = Path('release_files.json')
-        with open(release_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                'parts': parts_info,
-                'total_parts': len(parts_info),
-                'message': 'Ready for release'
-            }, f, ensure_ascii=False, indent=2)
+    if file_size > CHUNK_SIZE:
+        print(f"📦 فایل بزرگ است - درحال تقسیم...")
+        print(f"✂️  قسمت‌های 100MB...")
         
-        print(f"✅ {len(parts_info)} فایل آماده برای Release")
+        with open(filepath, 'rb') as f:
+            part_num = 1
+            while True:
+                chunk = f.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                
+                part_name = f"{filename}.part{part_num:03d}"
+                part_path = uploaded_dir / part_name
+                
+                with open(part_path, 'wb') as pf:
+                    pf.write(chunk)
+                
+                parts_info.append(part_name)
+                print(f"   ✅ {part_name} ({len(chunk) / (1024**2):.2f} MB)")
+                part_num += 1
+        
+        print(f"✅ {len(parts_info)} قسمت ایجاد شد\n")
     else:
-        print("❌ فایلی برای آپلود پیدا نشد")
+        print(f"📄 فایل کوچک است - بدون تقسیم")
+        new_path = uploaded_dir / filename
+        
+        if new_path.exists():
+            print(f"   ⏭️  فایل قبلاً موجود است")
+        else:
+            os.rename(filepath, new_path)
+            print(f"   ✅ کپی شد")
+        
+        parts_info.append(filename)
+        print()
+    
+    # ذخیره اطلاعات Release
+    release_file = Path('release_files.json')
+    with open(release_file, 'w', encoding='utf-8') as f:
+        json.dump({
+            'parts': parts_info,
+            'total_parts': len(parts_info),
+            'original_filename': filename,
+            'original_size': file_size
+        }, f, ensure_ascii=False, indent=2)
+    
+    print(f"✅ {len(parts_info)} فایل آماده برای Release")
+    print(f"📋 release_files.json ایجاد شد")
 
 if __name__ == "__main__":
     split_file()
