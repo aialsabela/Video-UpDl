@@ -20,8 +20,9 @@ import os
 import re
 import sys
 import asyncio
-from telethon import TelegramClient
+from telethon import TelegramClient, utils
 from telethon.sessions import StringSession
+from telethon.tl import types, functions
 
 API_ID = int(os.environ["TELEGRAM_API_ID"])
 API_HASH = os.environ["TELEGRAM_API_HASH"]
@@ -30,9 +31,11 @@ USER_CHAT_ID = os.environ.get("TELEGRAM_USER_CHAT_ID", "").strip()
 SESSION = os.environ.get("TELEGRAM_SESSION", "").strip()
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
 MESSAGE_LINK = os.environ["MESSAGE_LINK"].strip()
+PARALLEL_CONNECTIONS = int(os.environ.get("PARALLEL_CONNECTIONS", "8"))
 
 DOWNLOAD_DIR = "downloads"
 BOT_MODE = bool(BOT_TOKEN and USER_CHAT_ID)
+CHUNK_SIZE = 512 * 1024  # باید مضرب ۴۰۹۶ باشه؛ این محدودیت خود تلگرامه
 
 if not BOT_MODE and (not SESSION or len(SESSION) < 50):
     print("::error::مقدار Secret به نام TELEGRAM_SESSION خالی یا نامعتبر است. "
@@ -66,6 +69,62 @@ def resolve_chat_and_msg(value: str):
     raise ValueError(f"مقدار MESSAGE_LINK قابل تشخیص نیست: {value}")
 
 
+async def download_parallel(client, document, dest_path, progress_cb=None):
+    """
+    دانلود موازی با چند اتصال هم‌زمان به همون Data Center تلگرام.
+    تلگرام سرعت هر اتصال تکی رو محدود می‌کنه (همون ~۱ مگ/ثانیه)، ولی این
+    محدودیت روی هر اتصال جداست؛ با باز کردن چند اتصال هم‌زمان (پیش‌فرض ۸ تا)
+    می‌شه به مجموع سرعت بسیار بالاتری رسید.
+    نکته: از متدهای نیمه‌داخلی (private) کتابخونه Telethon استفاده می‌کنه که
+    ممکنه در آپدیت‌های بعدی این کتابخونه تغییر کنه؛ برای همین نسخه Telethon
+    توی requirements.txt پین شده.
+    """
+    total_size = document.size
+    dc_id = document.dc_id
+    location = types.InputDocumentFileLocation(
+        id=document.id,
+        access_hash=document.access_hash,
+        file_reference=document.file_reference,
+        thumb_size="",
+    )
+
+    num_parts = (total_size + CHUNK_SIZE - 1) // CHUNK_SIZE
+    downloaded = [0]
+    lock = asyncio.Lock()
+
+    with open(dest_path, "wb") as f:
+        f.truncate(total_size)
+
+    async def worker(worker_id):
+        sender = await client._borrow_exported_sender(dc_id)
+        try:
+            part = worker_id
+            with open(dest_path, "r+b") as f:
+                while part < num_parts:
+                    offset = part * CHUNK_SIZE
+                    remaining = total_size - offset
+                    write_len = min(CHUNK_SIZE, remaining)
+
+                    result = await sender.send(
+                        functions.upload.GetFileRequest(
+                            location=location, offset=offset, limit=CHUNK_SIZE
+                        )
+                    )
+                    f.seek(offset)
+                    f.write(result.bytes[:write_len])
+
+                    async with lock:
+                        downloaded[0] += write_len
+                        if progress_cb:
+                            progress_cb(downloaded[0], total_size)
+
+                    part += PARALLEL_CONNECTIONS
+        finally:
+            await client._return_exported_sender(sender)
+
+    await asyncio.gather(*(worker(i) for i in range(PARALLEL_CONNECTIONS)))
+
+
 async def main():
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -97,13 +156,30 @@ async def main():
                 print(f"پیشرفت دانلود: {percent}% "
                       f"({current / (1024*1024):.1f} / {total_mb:.1f} MB)")
 
-        path = await message.download_media(
-            file=DOWNLOAD_DIR + "/",
-            progress_callback=progress,
-        )
+        file_name = message.file.name or f"file_{msg_id}"
+        dest_path = os.path.join(DOWNLOAD_DIR, file_name)
+
+        document = getattr(message, "document", None)
+
+        if document is not None:
+            print(f"دانلود موازی با {PARALLEL_CONNECTIONS} اتصال هم‌زمان...")
+            try:
+                await download_parallel(client, document, dest_path, progress_cb=progress)
+                path = dest_path
+            except Exception as e:
+                print(f"::warning::دانلود موازی با خطا مواجه شد ({e})؛ "
+                      f"بازگشت به دانلود عادی...")
+                path = await message.download_media(
+                    file=DOWNLOAD_DIR + "/", progress_callback=progress
+                )
+        else:
+            # برای عکس و انواعی که Document نیستن، دانلود موازی معنی نداره
+            path = await message.download_media(
+                file=DOWNLOAD_DIR + "/", progress_callback=progress
+            )
 
         if not path:
-            print("::error::download_media مسیری برنگرداند؛ دانلود انجام نشد.")
+            print("::error::دانلود انجام نشد؛ مسیر فایل خروجی نداریم.")
             sys.exit(1)
 
         abs_path = os.path.abspath(path)
