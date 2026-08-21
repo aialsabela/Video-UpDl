@@ -74,3 +74,4 @@ ${RELEASE_URL}"
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${USER_CHAT_ID}" \
             -d text="❌ دانلود یا ریلیز با خطا مواجه شد. لاگ رو توی تب Actions چک کن."
+
