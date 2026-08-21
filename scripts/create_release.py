@@ -1,31 +1,57 @@
 import os
 import json
-import subprocess
+from pathlib import Path
 from datetime import datetime
+import subprocess
 
 def create_release():
-    if not os.path.exists('release_files.json'):
-        print("❌ release_files.json پیدا نشد")
-        return
+    release_file = Path('release_files.json')
     
-    with open('release_files.json', 'r') as f:
+    if not release_file.exists():
+        print("❌ release_files.json پیدا نشد")
+        return False
+    
+    with open(release_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    files = data['parts']
-    tag = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    files = data.get('parts', [])
+    
+    if not files:
+        print("❌ فایلی برای آپلود پیدا نشد")
+        return False
+    
+    # بررسی وجود فایل‌ها
+    uploaded_dir = Path('uploaded_files')
+    for file in files:
+        if not (uploaded_dir / file).exists():
+            print(f"❌ فایل پیدا نشد: {file}")
+            return False
+    
+    # ایجاد tag منحصر‌به‌فرد
+    tag = f"release-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     
     print(f"📤 درحال آپلود Release: {tag}")
     
-    # gh release create
-    file_args = ' '.join([f"uploaded_files/{f}" for f in files])
-    cmd = f"gh release create {tag} {file_args} --generate-notes"
-    
-    result = os.system(cmd)
-    
-    if result == 0:
+    try:
+        # استفاده از subprocess برای امنیت بیشتر
+        file_args = [str(uploaded_dir / f) for f in files]
+        cmd = ['gh', 'release', 'create', tag, '--generate-notes'] + file_args
+        
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
         print(f"✅ Release {tag} آپلود شد!")
-    else:
-        print(f"❌ خطا در آپلود")
-        exit(1)
+        print(f"📊 {len(files)} فایل آپلود شد")
+        
+        return True
+    
+    except subprocess.CalledProcessError as e:
+        print(f"❌ خطا در آپلود: {e.stderr}")
+        return False
+    except FileNotFoundError:
+        print("❌ gh CLI نصب نشده است")
+        print("   نصب کنید: https://cli.github.com")
+        return False
 
-create_release()
+if __name__ == "__main__":
+    success = create_release()
+    exit(0 if success else 1)
