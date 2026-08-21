@@ -25,7 +25,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install telethon
+        run: pip install -r requirements.txt
 
       - name: Download file from Telegram
         id: dl
