@@ -86,8 +86,9 @@ async def main():
                 if not filename:
                     filename = f"file_{message.id}"
                 
-                # Sanitize filename
-                filename = "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_', '-'))
+                # Sanitize filename - فقط کاراکترهای خطرناک حذف کن، نه نقاط!
+                # حذف فقط: / \ : * ? " < > |
+                filename = "".join(c for c in filename if c not in '/\\:*?"<>|')
                 
                 last_file = {
                     'message': message,
@@ -113,33 +114,48 @@ async def main():
         print(f"   نام: {filename}")
         print(f"   اندازه: {file_size / (1024*1024):.2f} MB")
         print(f"   پیام ID: {last_file['message_id']}")
+        print(f"   مسیر ذخیره: {filepath.absolute()}")
         
         if filepath.exists():
             print(f"⏭️  فایل قبلاً دانلود شده است")
-            print(f"   مسیر: {filepath.absolute()}")
+            actual_size = filepath.stat().st_size
+            print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
         else:
             print(f"⬇️  درحال دانلود...")
             await client.download_media(last_file['message'], str(filepath))
+            
+            # بررسی فوری بعد از دانلود
+            if not filepath.exists():
+                print(f"❌ خطا: فایل ایجاد نشد!")
+                print(f"   مسیری که سعی شد: {filepath.absolute()}")
+                print(f"   محتویات دایرکتوری {files_dir.absolute()}:")
+                for item in files_dir.iterdir():
+                    print(f"   - {item.name} ({item.stat().st_size} bytes)")
+                await client.disconnect()
+                exit(1)
+            
+            actual_size = filepath.stat().st_size
             print(f"✅ دانلود کامل شد")
-            print(f"   مسیر: {filepath.absolute()}")
+            print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
         
-        # بررسی اینکه فایل واقعاً وجود دارد
+        # بررسی نهایی
         if not filepath.exists():
-            print(f"❌ خطا: فایل بعد از دانلود پیدا نشد!")
+            print(f"❌ خطای حساس: فایل ناپدید شد!")
             await client.disconnect()
             exit(1)
         
         actual_size = filepath.stat().st_size
-        print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
         
         # ذخیره اطلاعات
         file_info = {
             'filename': filename,
             'size': actual_size,
             'message_id': last_file['message_id'],
-            'download_path': str(filepath.absolute())
+            'download_path': str(filepath.absolute()),
+            'timestamp': str(Path.cwd())
         }
         
+        # ذخیره در telegram_files
         info_file = files_dir / 'file_info.json'
         with open(info_file, 'w', encoding='utf-8') as f:
             json.dump(file_info, f, ensure_ascii=False, indent=2)
@@ -152,6 +168,12 @@ async def main():
         with open(root_info_file, 'w', encoding='utf-8') as f:
             json.dump(file_info, f, ensure_ascii=False, indent=2)
         print(f"   فایل (root): {root_info_file.absolute()}")
+        
+        # بررسی نهایی
+        print(f"\n🔍 بررسی نهایی:")
+        print(f"   ✅ فایل موجود: {filepath.exists()}")
+        print(f"   ✅ file_info.json موجود: {info_file.exists()}")
+        print(f"   ✅ file_info.json (root) موجود: {root_info_file.exists()}")
         
         await client.disconnect()
         print("✅ اتصال قطع شد")
