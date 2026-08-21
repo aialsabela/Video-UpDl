@@ -15,11 +15,17 @@ from telethon.sessions import StringSession
 
 API_ID = int(os.environ["TELEGRAM_API_ID"])
 API_HASH = os.environ["TELEGRAM_API_HASH"]
-SESSION = os.environ["TELEGRAM_SESSION"]
+SESSION = os.environ["TELEGRAM_SESSION"].strip()
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
 MESSAGE_LINK = os.environ["MESSAGE_LINK"].strip()
 
 DOWNLOAD_DIR = "downloads"
+
+if not SESSION or len(SESSION) < 50:
+    print("::error::مقدار Secret به نام TELEGRAM_SESSION خالی یا نامعتبر است. "
+          "دوباره scripts/generate_session.py را اجرا کنید و کل رشته خروجی را "
+          "بدون فاصله یا کوتیشن اضافه در Secret جایگذاری کنید.")
+    sys.exit(1)
 
 
 def resolve_chat_and_msg(value: str):
@@ -57,17 +63,40 @@ async def main():
             print("::error::پیامی با فایل ضمیمه در این آدرس پیدا نشد.")
             sys.exit(1)
 
-        print(f"در حال دانلود: {message.file.name or 'بدون‌نام'} "
-              f"({message.file.size / (1024*1024):.2f} MB)")
+        total_mb = message.file.size / (1024 * 1024)
+        print(f"در حال دانلود: {message.file.name or 'بدون‌نام'} ({total_mb:.2f} MB)")
 
-        path = await message.download_media(file=DOWNLOAD_DIR + "/")
-        print(f"دانلود کامل شد: {path}")
+        last_percent = [-10]
+
+        def progress(current, total):
+            percent = int(current * 100 / total)
+            if percent >= last_percent[0] + 10:
+                last_percent[0] = percent
+                print(f"پیشرفت دانلود: {percent}% "
+                      f"({current / (1024*1024):.1f} / {total_mb:.1f} MB)")
+
+        path = await message.download_media(
+            file=DOWNLOAD_DIR + "/",
+            progress_callback=progress,
+        )
+
+        if not path:
+            print("::error::download_media مسیری برنگرداند؛ دانلود انجام نشد.")
+            sys.exit(1)
+
+        abs_path = os.path.abspath(path)
+        size_mb = os.path.getsize(abs_path) / (1024 * 1024)
+        print(f"دانلود کامل شد: {abs_path} ({size_mb:.2f} MB)")
 
         # مسیر فایل رو برای مرحله بعدی workflow خروجی می‌دیم
         github_output = os.environ.get("GITHUB_OUTPUT")
-        if github_output:
-            with open(github_output, "a", encoding="utf-8") as f:
-                f.write(f"file_path={path}\n")
+        if not github_output:
+            print("::error::متغیر GITHUB_OUTPUT موجود نیست؛ خروجی file_path ست نمی‌شود.")
+            sys.exit(1)
+
+        with open(github_output, "a", encoding="utf-8") as f:
+            f.write(f"file_path={abs_path}\n")
+        print(f"خروجی file_path با موفقیت روی GITHUB_OUTPUT نوشته شد: {abs_path}")
 
 
 if __name__ == "__main__":
