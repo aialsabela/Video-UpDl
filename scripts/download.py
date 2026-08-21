@@ -1,9 +1,19 @@
 """
 دانلود فایل از یک پیام تلگرام با استفاده از Telethon.
-ورودی MESSAGE_LINK می‌تونه یکی از این دو حالت باشه:
-  - فقط آیدی عددی پیام (مثل 123) → از TELEGRAM_CHANNEL_ID به‌عنوان چت استفاده می‌شود
-  - لینک کامل پیام (مثل https://t.me/channel_username/123
-    یا https://t.me/c/1234567890/123) → چت از خود لینک استخراج می‌شود
+
+دو حالت پشتیبانی می‌شود:
+
+۱) حالت خودکار (از طریق بات، وقتی TELEGRAM_BOT_TOKEN و TELEGRAM_USER_CHAT_ID
+   ست شده باشند): با توکن خود بات لاگین می‌کند و مستقیم پیامی که کاربر به بات
+   فرستاده را می‌خواند. (شماره پیام و چت دقیقاً همانی است که بات دریافت کرده،
+   پس هیچ عدم‌تطابقی وجود ندارد و محدودیت ۲۰ مگابایتی Bot API HTTP هم دور زده
+   می‌شود چون Telethon مستقیم روی MTProto کار می‌کند.)
+
+۲) حالت دستی (از طریق اجرای مستقیم workflow با TELEGRAM_SESSION اکانت شخصی):
+   ورودی MESSAGE_LINK می‌تواند یکی از این دو حالت باشد:
+     - فقط آیدی عددی پیام (مثل 123) → از TELEGRAM_CHANNEL_ID به‌عنوان چت استفاده می‌شود
+     - لینک کامل پیام (مثل https://t.me/channel_username/123
+       یا https://t.me/c/1234567890/123) → چت از خود لینک استخراج می‌شود
 """
 
 import os
@@ -15,13 +25,16 @@ from telethon.sessions import StringSession
 
 API_ID = int(os.environ["TELEGRAM_API_ID"])
 API_HASH = os.environ["TELEGRAM_API_HASH"]
-SESSION = os.environ["TELEGRAM_SESSION"].strip()
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+USER_CHAT_ID = os.environ.get("TELEGRAM_USER_CHAT_ID", "").strip()
+SESSION = os.environ.get("TELEGRAM_SESSION", "").strip()
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
 MESSAGE_LINK = os.environ["MESSAGE_LINK"].strip()
 
 DOWNLOAD_DIR = "downloads"
+BOT_MODE = bool(BOT_TOKEN and USER_CHAT_ID)
 
-if not SESSION or len(SESSION) < 50:
+if not BOT_MODE and (not SESSION or len(SESSION) < 50):
     print("::error::مقدار Secret به نام TELEGRAM_SESSION خالی یا نامعتبر است. "
           "دوباره scripts/generate_session.py را اجرا کنید و کل رشته خروجی را "
           "بدون فاصله یا کوتیشن اضافه در Secret جایگذاری کنید.")
@@ -55,9 +68,18 @@ def resolve_chat_and_msg(value: str):
 
 async def main():
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    chat, msg_id = resolve_chat_and_msg(MESSAGE_LINK)
 
-    async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
+    if BOT_MODE:
+        chat = int(USER_CHAT_ID)
+        msg_id = int(MESSAGE_LINK)
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        await client.start(bot_token=BOT_TOKEN)
+    else:
+        chat, msg_id = resolve_chat_and_msg(MESSAGE_LINK)
+        client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
+        await client.start()
+
+    async with client:
         message = await client.get_messages(chat, ids=msg_id)
         if message is None or not message.file:
             print("::error::پیامی با فایل ضمیمه در این آدرس پیدا نشد.")
