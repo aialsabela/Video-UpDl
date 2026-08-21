@@ -4,6 +4,10 @@ import asyncio
 import json
 from pathlib import Path
 from telethon import TelegramClient
+import logging
+
+# Enable logging برای دیدن مشکل
+logging.basicConfig(level=logging.INFO)
 
 async def main():
     try:
@@ -30,28 +34,46 @@ async def main():
             session_file = session_dir / 'telegram_session.session'
             with open(session_file, 'wb') as f:
                 f.write(session_bytes)
+            print(f"✅ Session ذخیره شد: {session_file}")
         except Exception as e:
             print(f"❌ خطا در decode کردن session: {e}")
             exit(1)
         
-        # Create Client
-        client = TelegramClient(str(session_dir / 'telegram_session'), API_ID, API_HASH)
+        # Create Client with timeout
+        print("⏳ درحال اتصال به تلگرام...")
+        client = TelegramClient(
+            str(session_dir / 'telegram_session'), 
+            API_ID, 
+            API_HASH,
+            connection_retries=5,
+            retry_delay=1,
+            flood_sleep_threshold=120
+        )
+        
         await client.connect()
+        print("✅ متصل شدم")
         
         if not await client.is_user_authorized():
             print("❌ Session معتبر نیست!")
             await client.disconnect()
             exit(1)
         
-        print("✅ متصل شدم")
+        print("✅ تایید هویت انجام شد")
         
         # Downloaded files tracker
         downloaded_files = []
         message_count = 0
+        skip_count = 0
         
         # Get files from channel
+        print(f"⏳ درحال بررسی چنل {CHANNEL_ID}...")
+        
         async for message in client.iter_messages(CHANNEL_ID, limit=None):
             message_count += 1
+            
+            # نمایش پیشرفت هر 10 پیام
+            if message_count % 10 == 0:
+                print(f"   📊 {message_count} پیام بررسی شد...")
             
             if message.document:
                 # Extract filename safely
@@ -73,6 +95,7 @@ async def main():
                 # Skip if already downloaded
                 if filepath.exists():
                     print(f"⏭️  موجود است: {filename}")
+                    skip_count += 1
                     continue
                 
                 try:
@@ -109,20 +132,27 @@ async def main():
                 json.dump({
                     'total_messages_checked': message_count,
                     'total_files_downloaded': len(downloaded_files),
+                    'skipped_files': skip_count,
                     'files': downloaded_files
                 }, f, ensure_ascii=False, indent=2)
             
             print(f"\n📊 خلاصه:")
             print(f"   کل پیام‌ها: {message_count}")
             print(f"   فایل‌های دانلود‌شده: {len(downloaded_files)}")
+            print(f"   فایل‌های پرتاب‌شده: {skip_count}")
         else:
             print("⚠️  فایل دانلود‌شده‌ای یافت نشد!")
         
         await client.disconnect()
         print("✅ قطع شد")
         
+    except asyncio.TimeoutError:
+        print("❌ Timeout: اتصال تلگرام قطع شد")
+        exit(1)
     except Exception as e:
         print(f"❌ خطای کلی: {e}")
+        import traceback
+        traceback.print_exc()
         exit(1)
 
 if __name__ == "__main__":
