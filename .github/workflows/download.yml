@@ -1,0 +1,43 @@
+name: Download from Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      message_link:
+        description: "آیدی عددی پیام (با TELEGRAM_CHANNEL_ID) یا لینک کامل پیام"
+        required: true
+        type: string
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install telethon
+
+      - name: Download file from Telegram
+        id: dl
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+          MESSAGE_LINK: ${{ inputs.message_link }}
+        run: python scripts/download.py
+
+      - name: Create GitHub Release with the file
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: file-${{ github.run_id }}
+          name: "فایل دانلودشده - ${{ github.run_id }}"
+          files: ${{ steps.dl.outputs.file_path }}
