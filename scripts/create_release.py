@@ -40,11 +40,24 @@ def create_release():
     print(f"📊 تعداد فایل‌ها: {len(files)}\n")
     
     try:
+        # بررسی gh CLI
+        result = subprocess.run(['gh', '--version'], capture_output=True, text=True)
+        print(f"ℹ️  {result.stdout.strip()}")
+        
+        # بررسی GitHub Token
+        token_check = subprocess.run(['gh', 'auth', 'status'], capture_output=True, text=True)
+        if token_check.returncode != 0:
+            print("❌ GitHub Token نامعتبر است")
+            print(f"   خطا: {token_check.stderr}")
+            return False
+        
+        print("✅ GitHub Token معتبر است\n")
+        
         # استفاده از subprocess برای امنیت بیشتر
         file_args = [str(uploaded_dir / f) for f in files]
         cmd = ['gh', 'release', 'create', tag, '--generate-notes'] + file_args
         
-        print(f"⏳ درحال آپلود...")
+        print(f"⏳ درحال آپلود فایل‌ها...")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         
         print(f"✅ Release {tag} آپلود شد!")
@@ -60,6 +73,12 @@ def create_release():
     except subprocess.CalledProcessError as e:
         print(f"❌ خطا در آپلود: {e.stderr}")
         print(f"stdout: {e.stdout}")
+        print(f"\n💡 مشکل ممکنی:")
+        print(f"   1. GitHub Token باید Personal Access Token (PAT) باشد")
+        print(f"   2. PAT باید 'repo' و 'workflow' permissions داشته باشد")
+        print(f"   3. Token در GITHUB_TOKEN environment variable باید باشد")
+        print(f"\n📖 برای ساخت PAT:")
+        print(f"   https://github.com/settings/tokens/new")
         return False
     except FileNotFoundError:
         print("❌ gh CLI نصب نشده است")
