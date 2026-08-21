@@ -86,13 +86,9 @@ async def main():
                 if not filename:
                     filename = f"file_{message.id}"
                 
-                # Sanitize filename - فقط کاراکترهای خطرناک حذف کن، نه نقاط!
-                # حذف فقط: / \ : * ? " < > |
-                filename = "".join(c for c in filename if c not in '/\\:*?"<>|')
-                
                 last_file = {
                     'message': message,
-                    'filename': filename,
+                    'original_filename': filename,
                     'size': message.document.size,
                     'message_id': message.id
                 }
@@ -106,53 +102,52 @@ async def main():
             exit(1)
         
         # دانلود آخرین فایل
-        filename = last_file['filename']
-        filepath = files_dir / filename
+        original_filename = last_file['original_filename']
         file_size = last_file['size']
         
         print(f"\n📄 آخرین فایل:")
-        print(f"   نام: {filename}")
+        print(f"   نام: {original_filename}")
         print(f"   اندازه: {file_size / (1024*1024):.2f} MB")
         print(f"   پیام ID: {last_file['message_id']}")
-        print(f"   مسیر ذخیره: {filepath.absolute()}")
+        print(f"   مسیر ذخیره: {files_dir.absolute()}")
         
-        if filepath.exists():
-            print(f"⏭️  فایل قبلاً دانلود شده است")
-            actual_size = filepath.stat().st_size
-            print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
-        else:
-            print(f"⬇️  درحال دانلود...")
-            await client.download_media(last_file['message'], str(filepath))
-            
-            # بررسی فوری بعد از دانلود
-            if not filepath.exists():
-                print(f"❌ خطا: فایل ایجاد نشد!")
-                print(f"   مسیری که سعی شد: {filepath.absolute()}")
-                print(f"   محتویات دایرکتوری {files_dir.absolute()}:")
-                for item in files_dir.iterdir():
-                    print(f"   - {item.name} ({item.stat().st_size} bytes)")
-                await client.disconnect()
-                exit(1)
-            
-            actual_size = filepath.stat().st_size
-            print(f"✅ دانلود کامل شد")
-            print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
+        print(f"⬇️  درحال دانلود...")
+        await client.download_media(last_file['message'], str(files_dir))
         
-        # بررسی نهایی
-        if not filepath.exists():
-            print(f"❌ خطای حساس: فایل ناپدید شد!")
+        # یافتن فایل دانلود شده (با هر پسوندی)
+        downloaded_file = None
+        print(f"🔍 جستجو برای فایل دانلود شده...")
+        
+        for item in files_dir.iterdir():
+            if item.is_file():
+                print(f"   - {item.name}")
+                # انتخاب آخرین فایل اصلاح شده
+                if downloaded_file is None or item.stat().st_mtime > downloaded_file.stat().st_mtime:
+                    downloaded_file = item
+        
+        if not downloaded_file:
+            print(f"❌ خطا: هیچ فایلی دانلود نشد!")
+            print(f"   محتویات دایرکتوری {files_dir.absolute()}:")
+            for item in files_dir.iterdir():
+                print(f"   - {item.name}")
             await client.disconnect()
             exit(1)
         
+        filepath = downloaded_file
         actual_size = filepath.stat().st_size
+        
+        print(f"✅ دانلود کامل شد")
+        print(f"   فایل: {filepath.name}")
+        print(f"   اندازه واقعی: {actual_size / (1024*1024):.2f} MB")
+        print(f"   مسیر کامل: {filepath.absolute()}")
         
         # ذخیره اطلاعات
         file_info = {
-            'filename': filename,
+            'filename': filepath.name,
+            'original_filename': original_filename,
             'size': actual_size,
             'message_id': last_file['message_id'],
-            'download_path': str(filepath.absolute()),
-            'timestamp': str(Path.cwd())
+            'download_path': str(filepath.absolute())
         }
         
         # ذخیره در telegram_files
@@ -176,7 +171,7 @@ async def main():
         print(f"   ✅ file_info.json (root) موجود: {root_info_file.exists()}")
         
         await client.disconnect()
-        print("✅ اتصال قطع شد")
+        print("✅ اتصال قطع شد\n")
         
     except asyncio.TimeoutError:
         print("❌ Timeout: اتصال تلگرام قطع شد")
